@@ -1,3 +1,7 @@
+const nextId = (() => {
+    let currentId = 0
+    return () => currentId++
+})()
 function TodoApp()
 {
     const inputValue = ref('')
@@ -7,6 +11,7 @@ function TodoApp()
         event.preventDefault()
 
         const todo = {
+            id: nextId(),
             description: ref(inputValue.current),
             isComplete: ref(false),
         }
@@ -16,6 +21,53 @@ function TodoApp()
         inputValue.current = ''
 
         return false
+    }
+
+    const shuffleTodos = () => {
+        const working = todos.current
+
+        // take random actions
+        let i = 0
+        while (i < 10) {
+            i++
+
+            const canSwap = working.length > 1
+            const canDelete = working.length > 0
+
+            const options = ['create', canSwap && 'swap', canDelete && 'delete'].filter(x => typeof x === 'string')
+
+            const operation = options[Math.floor(Math.random() * options.length)]
+
+            if (operation === 'create') {
+                const newTodo = {
+                    id: nextId(),
+                    description: ref([..."asdfasdf"].map(x => "abcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random() * 26)]).join('')),
+                    isComplete: ref(Math.random() > 0.5),
+                }
+
+                const index = Math.floor(Math.random() * working.length + 1)
+                
+                working.splice(index, 0, newTodo)
+            }
+
+            if (operation === 'swap') {
+                let i = Math.floor(Math.random() * working.length)
+                let j = Math.floor(Math.random() * working.length)
+
+                const temp = working[i]
+                working[i] = working[j]
+                working[j] = temp
+            }
+
+            if (operation === 'delete') {
+                let i = Math.floor(Math.random() * working.length)
+
+                working.splice(i, 1)
+            }
+        }
+
+        todos.refresh()
+        window.todos = working
     }
 
     return el.div(
@@ -31,20 +83,42 @@ function TodoApp()
                 text("New Todo")
             )
         ),
+        el.div(
+            el.button(
+                on.click(shuffleTodos),
+                "Shuffle Todos",
+            ),
+            " ",
+            text(() => JSON.stringify(todos.current.map(x => x.id))),
+        ),
         el.ul(
             map(() => todos.current,
             (todo) => {
-                return Todo({ todo })
+                const deleteTodo = () => {
+                    const index = todos.current.indexOf(todo)
+                    todos.current.splice(index, 1)
+                    todos.refresh()
+                }
+                return Todo(todo, deleteTodo)
             }),
-            el.li("this is probably wrong")
+            el.li("Extra: not a todo")
         )
     )
 }
 
-function Todo({ todo }) {
+function Todo(todo, deleteSelf) {
     return [el.li(
         on.click(() => todo.isComplete.current = !todo.isComplete.current),
+        text(() => `#${todo.id}:`),
+        " ",
         text(() => `${todo.description.current} (${todo.isComplete.current ? 'Done' : 'Waiting' })`),
+        " ",
+        el.button(
+            on.click(deleteSelf),
+            "Delete"
+        ),
+        " ",
+        InitialRenderDetector(),
     )]
 }
 
@@ -58,7 +132,7 @@ function App () {
             maybe(() => counter.current > 0 && counter.current % 3 === 0,
                 () => text(" Fizz!")),
             maybe(() => counter.current > 0 && counter.current % 5 === 0,
-                " Buzz!")
+                " Buzz!"),
         ),
         el.div(
             el.button(
@@ -67,6 +141,27 @@ function App () {
             )
         ),
         TodoApp(),
+    ]
+}
+
+function InitialRenderDetector () {
+    return [
+        el.span(
+            att.class("render-detector"),
+            createEffect((root) => {
+                root.animate([
+                    { color: 'lightgreen' },
+                    { offset: 0.25, color: 'lightgreen'},
+                    { offset: 0.75, color: 'black' },
+                    { offset: 0.99, color: 'transparent', display: 'inline' },
+                    { display: 'none' }
+                ], {
+                    duration: 2000,
+                    fill: 'forwards',
+                })
+            }),
+            "Render!"
+        ),
     ]
 }
 

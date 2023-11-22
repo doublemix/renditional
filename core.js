@@ -130,6 +130,10 @@ class Section {
     removeChild (element) {
         this.commentNode.parentNode.removeChild(element)
     }
+
+    insertBefore (newElement, insertBeforeElement) {
+        this.commentNode.parentNode.insertBefore(newElement, insertBeforeElement ?? this.commentNode)
+    }
 }
 
 const makeDestroyer = () => {
@@ -211,41 +215,138 @@ const map = (calculateIterable, mapper) => {
         const dependent = new Dependent(run)
         destroy(() => dependent.cancel())
 
-        const comment = document.createComment("map")
-        root.appendChild(comment)
-        destroy(() => root.removeChild(comment))
+        const startOfMap = document.createComment("map")
+        root.appendChild(startOfMap)
+        destroy(() => root.removeChild(startOfMap))
         
-        let iterableValue
-        let destroyer = null
-
-        destroy(() => { destroyer?.() })
+        let currentItems = []
+        destroy(() => currentItems.forEach(item => item.destroyer()))
         
         function run () {
-            destroyer?.()
+            let newItems = []
 
             Deps.with(dependent, () => {
-                iterableValue = maybeCall(calculateIterable)
+                for (const value of maybeCall(calculateIterable)) {
+                    if (newItems.some(x => x.value === value)) continue; // no duplicates
+
+                    const item = {
+                        value,
+                        destroyer: null,
+                        section: null,
+                    }
+
+                    newItems.push(item)
+                }
             })
 
-            let destroyCallbacks = []
+            let currentIndex = 0
+            let newIndex = 0
 
-            function destroy (callback) {
-                destroyCallbacks.unshift(callback)
-            }
-            
-            for (const value of iterableValue) {
-                render(new Section(comment), mapper(value), destroy)
-            }
-
-            function newDestroyer () {
-                destroyCallbacks.forEach(cb => cb())
+            function getStartNode (currentIndex) {
+                let actualIndex = currentIndex - 1
+                let startNode = actualIndex === -1 ? startOfMap : currentItems[actualIndex].commentNode
+                return startNode
             }
 
-            destroyer = newDestroyer
+            while (newIndex < newItems.length || currentIndex < currentItems.length) {
+                // does the current item have a match, if not then destroy
+                if (currentIndex < currentItems.length) {
+                    const currentItem = currentItems[currentIndex]
+                    const matchingIndex = newItems.findIndex(x => x.value === currentItem.value)
+                    if (matchingIndex === -1) {
+                        currentItem.destroyer()
+                        currentItems.splice(currentIndex, 1)
+                        continue;
+                    }
+                }
+
+                if (newIndex < newItems.length) {
+                    const newItem = newItems[newIndex]
+                    const matchingIndex = currentItems.findIndex(x => x.value === newItem.value)
+                    if (matchingIndex === -1) {
+                        // brand new item
+                        newItem.destroyer = makeDestroyer()
+                        newItem.commentNode = document.createComment("map item")
+                        // newItem.destroyer.destroy()
+                        newItem.section = new Section(newItem.commentNode)
+                        
+                        const insertBeforeNode = getStartNode(currentIndex).nextSibling
+                        root.insertBefore(newItem.commentNode, insertBeforeNode)
+                        newItem.destroyer.destroy(() => root.removeChild(newItem.commentNode))
+
+                        render(newItem.section, mapper(newItem.value), newItem.destroyer.destroy)
+
+                        currentItems.splice(currentIndex, 0, newItem)
+
+                        currentIndex++
+                        newIndex++
+                    } else {
+                        if (matchingIndex !== currentIndex) {
+                            // move
+                            const matchingItem = currentItems[matchingIndex]
+                            const elementsToMove = []
+                            const startNode = getStartNode(matchingIndex)
+                            const endNode = matchingItem.commentNode
+
+                            let currentNode = startNode
+                            while (currentNode !== endNode) {
+                                currentNode = currentNode.nextSibling
+                                elementsToMove.push(currentNode)
+                            }
+
+                            const insertBeforeNode = getStartNode(currentIndex).nextSibling
+                            
+                            for (const element of elementsToMove) {
+                                root.insertBefore(element, insertBeforeNode)
+                            }
+
+                            currentItems.splice(matchingIndex, 1)
+                            currentItems.splice(currentIndex, 0, matchingItem)
+
+                            currentIndex++
+                            newIndex++
+                        } else {
+                            currentIndex++
+                            newIndex++
+                        }
+                    }
+                }
+            }
+
+            // TODO delete, or move to testing suite
+            function assertUpdateWasSuccessful () {
+                try {
+                    if (currentItems.length !== newItems.length) throw new Error(`map update failure: length mismatch, expected: ${newItems.length}, got: ${currentItems.length}`)
+                    let i = 0
+                    while (i < currentItems.length) {
+                        if (currentItems[i].value !== newItems[i].value)
+                            throw new Error("map update failure: mismatch in items at index " + i)
+                        i++
+                    }
+
+                    i = 0
+                    while (i < currentItems.length - 1) {
+                        if (currentItems[i].commentNode.compareDocumentPosition(currentItems[i + 1].commentNode) & Node.DOCUMENT_POSITION_FOLLOWING === 0) {
+                            throw new Error("map update failure: nodes are out-of-order at index " + i)
+                        }
+                        i++
+                    }
+                } catch (err) {
+                    console.error("misatched map", currentItems, newItems)
+                    throw err
+                }
+            }
+
+            // TODO only run on test
+            assertUpdateWasSuccessful()
         }
         
         run()
     }
+}
+
+const createEffect = (effectFn) => {
+    return effectFn
 }
 
 function createPropertyBasedProxy (valueCreator) {
