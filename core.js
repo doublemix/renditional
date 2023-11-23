@@ -70,6 +70,13 @@ class Dependent {
         this.dependencies.length = 0
     }
 
+    with (callback, shouldClearDependencies = true) {
+        if (shouldClearDependencies) this.clearDependencies()
+        let result
+        Deps.with(this, () => { result = callback() })
+        return result
+    }
+
     onDependencyUpdated () {
         if (this.isCancelled) return;
         (0, this.callback)()
@@ -96,6 +103,12 @@ const ref = initialValue => {
         set current (newValue) {
             value = newValue
             dep.updated();
+        },
+        get value () {
+            return value
+        },
+        set value (newValue) {
+            value = newValue
         },
         refresh () {
             dep.updated();
@@ -164,7 +177,7 @@ const makeDestroyer = () => {
 }
 
 const maybe = (calculateShown, construct) => {
-    return (root, destroy) => {
+    return new StandardEffect((root, destroy) => {
         const dependent = new Dependent()
         destroy(() => dependent.cancel())
 
@@ -174,28 +187,25 @@ const maybe = (calculateShown, construct) => {
 
         const section = new Section(comment)
 
-        let currentShown
-        Deps.with(dependent, () => {
-            currentShown = maybeCall(calculateShown)
+        let currentShown = dependent.with(() => {
+            return maybeCall(calculateShown)
         })
 
         let currentDestroyer = null
 
         if (currentShown) {
             currentDestroyer = makeDestroyer()
-            render(root, maybeCall(construct), currentDestroyer.destroy)
+            render(section, maybeCall(construct), currentDestroyer.destroy)
         }
 
         dependent.registerCallback(() => {
-            let nextShown
-
-            Deps.with(dependent, () => {
-                nextShown = maybeCall(calculateShown)
+            const nextShown = dependent.with(() => {
+                return maybeCall(calculateShown)
             })
 
             if (nextShown && !currentShown) {
                 currentDestroyer = makeDestroyer()
-                render(root, maybeCall(construct), currentDestroyer.destroy)
+                render(section, maybeCall(construct), currentDestroyer.destroy)
             }
 
             if (!nextShown && currentShown) {
@@ -207,11 +217,11 @@ const maybe = (calculateShown, construct) => {
         })
 
         destroy(() => currentDestroyer?.())
-    }
+    })
 }
 
 const map = (calculateIterable, mapper) => {
-    return (root, destroy) => {
+    return new StandardEffect((root, destroy) => {
         const dependent = new Dependent(run)
         destroy(() => dependent.cancel())
 
@@ -342,11 +352,28 @@ const map = (calculateIterable, mapper) => {
         }
         
         run()
+    })
+}
+
+class Effect {
+    apply (root, destroy) {
+        throw new Error("Abstract method Effect.apply called directly")
+    }
+}
+
+class StandardEffect extends Effect {
+    constructor (applyCb) {
+        super()
+        this.applyCb = applyCb
+    }
+
+    apply (root, destroy) {
+        (0, this.applyCb)(root, destroy)
     }
 }
 
 const createEffect = (effectFn) => {
-    return effectFn
+    return new StandardEffect(effectFn)
 }
 
 function createPropertyBasedProxy (valueCreator) {
@@ -362,7 +389,7 @@ function createPropertyBasedProxy (valueCreator) {
 
 const el = createPropertyBasedProxy(tagName => {
     function self(...children) {
-        return (root, destroy) => {
+        return new StandardEffect((root, destroy) => {
             const element = document.createElement(tagName)
 
             root.appendChild(element)
@@ -370,7 +397,7 @@ const el = createPropertyBasedProxy(tagName => {
             destroy(() => root.removeChild(element))
 
             render(element, children, destroy)
-        }
+        })
     }
 
     return self
@@ -380,7 +407,7 @@ const __testEl = document.createElement('div')
 
 const att = createPropertyBasedProxy(attributeName => {
     function self(calculateValue) {
-        return (root, destroy) => {
+        return new StandardEffect((root, destroy) => {
             const dependent = new Dependent()
             destroy(() => dependent.cancel())
             
@@ -405,7 +432,7 @@ const att = createPropertyBasedProxy(attributeName => {
             dependent.registerCallback(run)
 
             run()
-        }
+        })
     }
 
     return self
@@ -413,18 +440,18 @@ const att = createPropertyBasedProxy(attributeName => {
 
 const on = createPropertyBasedProxy(eventName => {
     function self(listener) {
-        return (root, destroy) => {
+        return new StandardEffect((root, destroy) => {
             root.addEventListener(eventName, listener)
 
             destroy(() => root.removeEventListener(eventName, listener))
-        }
+        })
     }
 
     return self
 })
 
 const text = (valueCreator) => {
-    return (root, destroy) => {
+    return new StandardEffect((root, destroy) => {
         const textNode = document.createTextNode('')
 
         const cancel = watch(() => {
@@ -436,11 +463,11 @@ const text = (valueCreator) => {
         root.appendChild(textNode)
 
         destroy(() => root.removeChild(textNode))
-    }
+    })
 }
 
 const managedInputValue = (valueCreator) => {
-    return (root, destroy) => {
+    return new StandardEffect((root, destroy) => {
         const dep = new Dependent(run)
         destroy(() => dep.cancel())
 
@@ -456,7 +483,7 @@ const managedInputValue = (valueCreator) => {
 
         run()
 
-    }
+    })
 }
 
 const maybeCall = (valueOrFn, ...args) => {
@@ -472,9 +499,10 @@ const render = (root, template, destroy = noop) => {
     if (template instanceof Array) {
         for (const item of template)
             render(root, item, destroy)
-    }
-    else if (typeof template === 'function') {
-        template(root, destroy)
+    } else if (template instanceof Effect) {
+        template.apply(root, destroy)
+    } else if (typeof template === 'function') {
+        throw new Error("Function template not supported, currently")
     } else if (template === null || typeof template === 'string' || typeof template === 'number' || typeof template === 'boolean') {
         const textNode = document.createTextNode(template)
         root.appendChild(textNode)

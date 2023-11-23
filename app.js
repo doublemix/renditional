@@ -141,6 +141,8 @@ function App () {
             )
         ),
         TodoApp(),
+        TestDependenciesApp(),
+        TestMaybeApp(),
     ]
 }
 
@@ -162,6 +164,85 @@ function InitialRenderDetector () {
             }),
             "Render!"
         ),
+    ]
+}
+
+function TestMaybeApp () {
+    const shownA = ref(true)
+    const shownB = ref(true)
+    const shownC = ref(true)
+
+    const toggleA = () => {
+        shownA.current = !shownA.current
+    }
+
+    const toggleB = () => {
+        shownB.current = !shownB.current
+    }
+
+    const toggleC = () => {
+        shownC.current = !shownC.current
+    }
+
+    return [
+        el.h1("Test Maybe"),
+        el.div(
+            el.button("Toggle A", on.click(() => toggleA())),
+            el.button("Toggle B", on.click(() => toggleB())),
+            el.button("Toggle C", on.click(() => toggleC())),
+        ),
+        el.div(
+            maybe(() => shownA.current, el.div("Item A")),
+            maybe(() => shownB.current, el.div("Item B")),
+            maybe(() => shownC.current, el.div("Item C")),
+        ),
+    ]
+}
+
+function TestDependenciesApp () {
+    const shown = ref(false)
+
+    const value = ref(0)
+    const logs = ref([])
+
+    const log = (value) => {
+        logs.value.push({ value })
+        setTimeout(() => logs.refresh(), 0)
+    }
+
+    const toggleShown = () => {
+        shown.current = !shown.current
+    }
+
+    const increment = () => {
+        value.current++
+    }
+
+    return [
+        el.h1("Test Dependencies"),
+        el.div(
+            el.button(
+                on.click(() => toggleShown()),
+                "Shown: ",
+                text(() => shown.current.toString()),
+            ),
+            el.button(
+                on.click(() => increment()),
+                "Value: ",
+                text(() => value.current.toString()),
+            ),
+        ),
+        maybe(() => {
+            log(`updating text: ${shown.value ? "shown" : "hidden"} ${value.value}`)
+            if (shown.current) {
+                return value.current < 0
+            }
+            return false
+        }, () => "You can't see me"),
+        el.pre(
+            map(() => logs.current,
+            x => `> ${x.value}\n`)
+        )
     ]
 }
 
