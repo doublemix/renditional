@@ -143,6 +143,7 @@ function App () {
         TodoApp(),
         TestDependenciesApp(),
         TestMaybeApp(),
+        TestMapInMaybeApp(),
     ]
 }
 
@@ -243,6 +244,47 @@ function TestDependenciesApp () {
             map(() => logs.current,
             x => `> ${x.value}\n`)
         )
+    ]
+}
+
+function TestMapInMaybeApp ()
+{
+    const items = ref([{ x: 1 }, { x: 2 }, { x: 3 }])
+    const shown = ref(false)
+    const toggleShown = () => {
+        shown.current = !shown.current
+    }
+
+    const swap = () => {
+        const working = items.current
+        const temp = working[0]
+        working[0] = working[1]
+        working[1] = temp
+        items.refresh()
+    }
+
+    return [
+        el.h1("Test Map In Maybe"),
+        el.div(
+            el.button(
+                on.click(() => toggleShown()),
+                "Shown: ",
+                text(() => shown.current.toString()),
+            ),
+            el.button(
+                on.click(() => swap()),
+                "Swap",
+            ),
+        ),
+        el.div(
+            maybe(
+                () => shown.current,
+                map(
+                    () => items.current,
+                    (item) => el.div(text(item.x)),
+                ),
+            ),
+        ),
     ]
 }
 
