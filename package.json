@@ -1,5 +1,5 @@
 {
-  "name": "@doublemx2/deact",
+  "name": "@doublemx2/renditional",
   "version": "1.0.0-beta.1",
   "description": "Render templates to HTML, while pushing re-renders as deep in the templates as possible.",
   "main": "index.js",
