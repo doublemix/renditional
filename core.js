@@ -19,7 +19,7 @@ class DependencyTracker {
     }
 }
 
-class Dependency {
+export class Dependency {
     constructor () {
         this.dependents = []
     }
@@ -48,7 +48,7 @@ class Dependency {
     }
 }
 
-class Dependent {
+export class Dependent {
     constructor (callback) {
         this.dependencies = []
         this.callback = callback
@@ -94,7 +94,7 @@ class Dependent {
 
 const Deps = new DependencyTracker()
 
-const ref = initialValue => {
+export const ref = initialValue => {
     const dep = new Dependency();
 
     let value = initialValue
@@ -120,21 +120,6 @@ const ref = initialValue => {
     }
 }
 
-const watch = callback => {
-    const dependent = new Dependent(() => { run() });
-
-    function run () {
-        dependent.clearDependencies();
-        Deps.with(dependent, () => {
-            callback()
-        })
-    }
-
-    run()
-
-    return () => dependent.cancel()
-}
-
 class Section {
     constructor (commentNode) {
         this.commentNode = commentNode
@@ -153,7 +138,7 @@ class Section {
     }
 }
 
-const makeDestroyer = () => {
+export const makeDestroyer = () => {
     const destroyCallbacks = []
     let destroyed = false
 
@@ -180,7 +165,7 @@ const makeDestroyer = () => {
     return destroyer
 }
 
-const maybe = (calculateShown, construct) => {
+export const maybe = (calculateShown, construct) => {
     return new StandardEffect((root, destroy) => {
         const dependent = new Dependent()
         destroy(() => dependent.cancel())
@@ -224,7 +209,7 @@ const maybe = (calculateShown, construct) => {
     })
 }
 
-const map = (calculateIterable, mapper) => {
+export const map = (calculateIterable, mapper) => {
     return new StandardEffect((root, destroy) => {
         const dependent = new Dependent(run)
         destroy(() => dependent.cancel())
@@ -359,13 +344,13 @@ const map = (calculateIterable, mapper) => {
     })
 }
 
-class Effect {
+export class Effect {
     apply (root, destroy) {
         throw new Error("Abstract method Effect.apply called directly")
     }
 }
 
-class StandardEffect extends Effect {
+export class StandardEffect extends Effect {
     constructor (applyCb) {
         super()
         this.applyCb = applyCb
@@ -376,7 +361,7 @@ class StandardEffect extends Effect {
     }
 }
 
-const createEffect = (effectFn) => {
+export const createEffect = (effectFn) => {
     return new StandardEffect(effectFn)
 }
 
@@ -391,7 +376,7 @@ function createPropertyBasedProxy (valueCreator) {
     })
 }
 
-const el = createPropertyBasedProxy(camelCaseTagName => {
+export const el = createPropertyBasedProxy(camelCaseTagName => {
     const tagName = camelToKebab(camelCaseTagName)
 
     function self(...children) {
@@ -409,9 +394,7 @@ const el = createPropertyBasedProxy(camelCaseTagName => {
     return self
 })
 
-const __testEl = document.createElement('div')
-
-const att = createPropertyBasedProxy(camelCaseAttributeName => {
+export const att = createPropertyBasedProxy(camelCaseAttributeName => {
     const attributeName = camelToKebab(camelCaseAttributeName)
 
     function self(calculateValue) {
@@ -446,7 +429,7 @@ const att = createPropertyBasedProxy(camelCaseAttributeName => {
     return self
 })
 
-const on = createPropertyBasedProxy(camelCaseEventName => {
+export const on = createPropertyBasedProxy(camelCaseEventName => {
     const eventName = camelToKebab(camelCaseEventName)
     
     function self(listener) {
@@ -460,39 +443,27 @@ const on = createPropertyBasedProxy(camelCaseEventName => {
     return self
 })
 
-const text = (valueCreator) => {
+export const text = (valueCreator) => {
     return new StandardEffect((root, destroy) => {
-        const textNode = document.createTextNode('')
+        const dependent = new Dependent()
+        destroy(() => dependent.cancel())
 
-        const cancel = watch(() => {
-            textNode.textContent = maybeCall(valueCreator)
+        const initialValue = dependent.with(() => {
+            return maybeCall(valueCreator)
         })
 
-        destroy(cancel)
+        const textNode = document.createTextNode(initialValue)
 
         root.appendChild(textNode)
-
         destroy(() => root.removeChild(textNode))
-    })
-}
 
-const managedInputValue = (valueCreator) => {
-    return new StandardEffect((root, destroy) => {
-        const dep = new Dependent(run)
-        destroy(() => dep.cancel())
-
-        function run () {
-            let value
-
-            Deps.with(dep, () => {
-                value = maybeCall(valueCreator)
+        dependent.registerCallback(() => {
+            const newValue = dependent.with(() => {
+                return maybeCall(valueCreator)
             })
 
-            root.value = value
-        }
-
-        run()
-
+            textNode.textContent = newValue
+        })
     })
 }
 
@@ -505,7 +476,7 @@ const maybeCall = (valueOrFn, ...args) => {
 
 const noop = () => {}
 
-const render = (root, template, destroy = noop) => {
+export const render = (root, template, destroy = noop) => {
     if (template instanceof Array) {
         for (const item of template)
             render(root, item, destroy)

@@ -1,11 +1,17 @@
 {
   "name": "@doublemx2/renditional",
-  "version": "1.0.0-beta.1",
+  "private": false,
+  "version": "0.0.1-beta.3",
   "description": "Render templates to HTML, while pushing re-renders as deep in the templates as possible.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "rollup -c",
+    "prepare": "npm run build"
   },
+  "files": [
+    "umd/"
+  ],
   "author": "",
   "license": "ISC"
 }
