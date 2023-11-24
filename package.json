@@ -1,0 +1,11 @@
+{
+  "name": "@doublemx2/deact",
+  "version": "1.0.0-beta.1",
+  "description": "Render templates to HTML, while pushing re-renders as deep in the templates as possible.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC"
+}
