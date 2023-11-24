@@ -144,6 +144,7 @@ function App () {
         TestDependenciesApp(),
         TestMaybeApp(),
         TestMapInMaybeApp(),
+        TestWebComponentsAndDataAttributes(),
     ]
 }
 
@@ -284,6 +285,29 @@ function TestMapInMaybeApp ()
                     (item) => el.div(text(item.x)),
                 ),
             ),
+        ),
+    ]
+}
+
+class HelloWorldComponent extends HTMLElement {
+    connectedCallback() { // callback method
+        this.innerHTML = 'Hello, World!'
+    }
+}
+
+// Define the custom element
+window.customElements.define('hello-world', HelloWorldComponent)
+
+function TestWebComponentsAndDataAttributes () {
+    return [
+        el.h1("Test Web Components and Data Attributes"),
+        el.div("In other words, test camelCase to kebab-case"),
+        el.helloWorld(),
+        el.div(
+            att.dataText("Test data attribute"),
+            createEffect((node) => {
+                node.textContent = node.dataset.text
+            }),
         ),
     ]
 }

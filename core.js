@@ -1,3 +1,7 @@
+const camelToKebab = (source) => {
+    return source.replace(/[A-Z]/g, x => "-" + x.toLowerCase())
+}
+
 class DependencyTracker {
     constructor () {
         this.dependentStack = []
@@ -387,7 +391,9 @@ function createPropertyBasedProxy (valueCreator) {
     })
 }
 
-const el = createPropertyBasedProxy(tagName => {
+const el = createPropertyBasedProxy(camelCaseTagName => {
+    const tagName = camelToKebab(camelCaseTagName)
+
     function self(...children) {
         return new StandardEffect((root, destroy) => {
             const element = document.createElement(tagName)
@@ -405,7 +411,9 @@ const el = createPropertyBasedProxy(tagName => {
 
 const __testEl = document.createElement('div')
 
-const att = createPropertyBasedProxy(attributeName => {
+const att = createPropertyBasedProxy(camelCaseAttributeName => {
+    const attributeName = camelToKebab(camelCaseAttributeName)
+
     function self(calculateValue) {
         return new StandardEffect((root, destroy) => {
             const dependent = new Dependent()
@@ -438,7 +446,9 @@ const att = createPropertyBasedProxy(attributeName => {
     return self
 })
 
-const on = createPropertyBasedProxy(eventName => {
+const on = createPropertyBasedProxy(camelCaseEventName => {
+    const eventName = camelToKebab(camelCaseEventName)
+    
     function self(listener) {
         return new StandardEffect((root, destroy) => {
             root.addEventListener(eventName, listener)
