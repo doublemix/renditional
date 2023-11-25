@@ -1,10 +1,26 @@
-export default {
-    input: {
-        core: 'core.js',
+export default [
+    {
+        input: {
+            core: 'core.js',
+        },
+        output: {
+            format: 'umd',
+            dir: 'umd',
+            name: 'Renditional',
+        },
     },
-    output: {
-        format: 'umd',
-        dir: 'umd',
-        name: 'Renditional',
-    },
-}
+    {
+        input: 'hash-router.js',
+        external: [
+            'renditional'
+        ],
+        output: {
+            format: 'umd',
+            dir: 'umd',
+            name: 'RenditionalHashRouter',
+            globals: {
+                'renditional': 'Renditional',
+            },
+        }
+    }
+]

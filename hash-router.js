@@ -1,5 +1,6 @@
+import { makeDestroyer, render, StandardEffect } from 'renditional'
 
-const router = (routeMap, template404 = () => []) => {
+export const router = (routeMap, template404 = () => []) => {
     return new StandardEffect((node, destroy) => {
         let currentDestroyer
         destroy(() => currentDestroyer?.())
