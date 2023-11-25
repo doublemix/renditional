@@ -1,7 +1,46 @@
+import {
+    StandardEffect,
+    Dependent,
+    render,
+    el,
+    att,
+    on,
+    maybe,
+    map,
+    text,
+    ref,
+    createEffect
+} from "/renditional/core.js"
+
+function maybeCall (maybeFn, ...args) {
+    if (typeof maybeFn === 'function') {
+        return maybeFn(...args)
+    }
+    return maybeFn
+}
+
+const managedInputValue = (valueCreator) => {
+    return new StandardEffect((root, destroy) => {
+        const dependent = new Dependent(run)
+        destroy(() => dependent.cancel())
+
+        function run () {
+            const value = dependent.with(() => {
+                return maybeCall(valueCreator)
+            })
+
+            root.value = value
+        }
+
+        run()
+    })
+}
+
 const nextId = (() => {
     let currentId = 0
     return () => currentId++
 })()
+
 function TodoApp()
 {
     const inputValue = ref('')
@@ -315,3 +354,5 @@ function TestWebComponentsAndDataAttributes () {
 function main () {
     render(document.getElementById("app"), App())
 }
+
+main()
