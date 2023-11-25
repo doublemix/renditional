@@ -28,12 +28,13 @@
         render(document.getElementById("app"),
             router({
                 "/": () => {
+                    const excitement = ref(false)
                     return [
                         h1("Renditional.js"),
                         div(a(href("#/foo"), "Foo")),
                         div(a(href("#/bar"), "Bar")),
                         div(
-                            button(
+                            el.button(
                                 att.type('button'),
                                 "Counter: ",
                                 text(() => counter.current.toString()),
@@ -41,7 +42,15 @@
                                     counter.current++
                                 }),
                             )
-                        )
+                        ),
+                        div(
+                            img(
+                                on.click(() => { excitement.current = !excitement.current }),
+                                att.src(() => excitement.current ? "./renditional.svg" : "renditional-black.svg"),
+                                att.width("200px"),
+                                att.height("200px"),
+                            )
+                        ),
                     ]
                 },
                 "/foo": () => [
