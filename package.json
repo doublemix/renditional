@@ -1,9 +1,9 @@
 {
   "name": "@doublemx2/renditional",
   "private": false,
-  "version": "0.0.1-beta.3",
+  "version": "0.0.1-beta.4",
   "description": "Render templates to HTML, while pushing re-renders as deep in the templates as possible.",
-  "main": "index.js",
+  "main": "umd/core.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "rollup -c",
@@ -12,6 +12,7 @@
   "files": [
     "umd/"
   ],
-  "author": "",
+  "author": "Mitchel Myers",
+  "repository": "github:doublemix/renditional",
   "license": "ISC"
 }
