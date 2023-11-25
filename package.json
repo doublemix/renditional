@@ -7,12 +7,15 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "rollup -c",
-    "prepublishOnly": "npm run build"
+    "prepare": "npm run build"
   },
   "files": [
     "umd/"
   ],
   "author": "Mitchel Myers",
   "repository": "github:doublemix/renditional",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "rollup": "^4.5.2"
+  }
 }
