@@ -9,7 +9,7 @@ Updates in Renditional are driven by automatically-tracked dependencies. See the
 ## Usage
 
 ```javascript
-import { render, el, ref } from 'renditional';
+import { render, el, on, ref, text } from '@doublemx2/renditional';
 
 function Counter () {
     const count = ref(0);
@@ -19,13 +19,13 @@ function Counter () {
             text(() => count.current.toString()),
         ),
         el.button(
-            on.click(() => count.current += 1)
+            on.click(() => count.current += 1),
             "Increment",
         ),
     ]
 }
 
-render(document.getElementById("root"))
+render(document.getElementById("root"), Counter())
 ```
 
 ## Documentation and API
