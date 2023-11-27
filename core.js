@@ -526,6 +526,50 @@ export const text = (valueCreator) => {
     })
 }
 
+const ComponentContext = {
+    current: null,
+}
+
+export const component = (setUp) => {
+    return new StandardEffect((node, destroy) => {
+
+        const previousContext = ComponentContext.current
+        ComponentContext.current = { destroy }
+        let template
+        try {
+            template = setUp()
+        } finally {
+            ComponentContext.current = previousContext
+        }
+        render(node, template, destroy)
+    })
+}
+
+export const useEffect = (effect) => {
+    if (ComponentContext.current === null) {
+        throw new TypeError("useEffect called outside of component setUp function")
+    }
+
+    const dependent = new Dependent()
+
+    let currentDestroyer
+    ComponentContext.current.destroy(() => currentDestroyer?.())
+
+    dependent.registerCallback(run)
+
+    run()
+
+    function run () {
+        currentDestroyer?.()
+
+        currentDestroyer = makeDestroyer()
+
+        dependent.with(() => {
+            effect(currentDestroyer.destroy)
+        })
+    }
+}
+
 export const render = (node, template, destroy = noop) => {
     if (template instanceof Array) {
         for (const item of template)

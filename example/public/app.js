@@ -9,7 +9,10 @@ import {
     map,
     text,
     ref,
-    createEffect
+    createEffect,
+    computed,
+    component,
+    useEffect,
 } from "/renditional/core.js"
 
 function maybeCall (maybeFn, ...args) {
@@ -21,8 +24,12 @@ function maybeCall (maybeFn, ...args) {
 
 const managedInputValue = (valueCreator) => {
     return new StandardEffect((root, destroy) => {
-        const dependent = new Dependent(run)
+        const dependent = new Dependent()
         destroy(() => dependent.cancel())
+
+        dependent.registerCallback(run)
+        
+        run()
 
         function run () {
             const value = dependent.with(() => {
@@ -31,8 +38,6 @@ const managedInputValue = (valueCreator) => {
 
             root.value = value
         }
-
-        run()
     })
 }
 
@@ -184,6 +189,9 @@ function App () {
         TestMaybeApp(),
         TestMapInMaybeApp(),
         TestWebComponentsAndDataAttributes(),
+        TestComputed(),
+        TestComponent(),
+        TestComponentEffects(),
     ]
 }
 
@@ -348,6 +356,169 @@ function TestWebComponentsAndDataAttributes () {
                 node.textContent = node.dataset.text
             }),
         ),
+    ]
+}
+
+function TestComputed () {
+    const a = ref(0)
+    const b = ref(0)
+    let lastSet = "a"
+
+    const c = computed(
+        () => a.current + b.current,
+        (value) => {
+            if (lastSet === 'a') {
+                b.current = value - a.current
+            } else {
+                a.current = value - b.current
+            }
+        }
+    )
+
+    return [
+        el.h1("Test Computed"),
+        el.div(
+            el.input(
+                att.type("number"),
+                managedInputValue(() => a.current),
+                on.change(event => { lastSet = "a", a.current = +event.target.value }),
+            ),
+            " + ",
+            el.input(
+                att.type("number"),
+                managedInputValue(() => b.current),
+                on.change(event => { lastSet = "b", b.current = +event.target.value }),
+            ),
+            " = ",
+            el.input(
+                att.type("number"),
+                managedInputValue(() => c.current),
+                on.change(event => { c.current = +event.target.value }),
+            ),
+        )
+    ]
+}
+
+function TestComponent () {
+    const CounterWithout = () => {
+        const counter = ref(0)
+
+        return [
+            el.button(
+                att.type("button"),
+                on.click(() => counter.current++),
+                text(() => `Clicks: ${counter.current}`)
+            )
+        ]
+    }
+    const CounterWith = () => component(CounterWithout)
+
+    const counterWithoutTemplate = CounterWithout()
+    const counterWithTemplate = CounterWith()
+
+    const maybeWithoutTemplate = CounterWithout()
+    const maybeWithTemplate = CounterWith()
+
+    const Maybe = (child) => {
+        const isShown = ref(true)
+        return [
+            el.div(
+                el.button(
+                    att.type("button"),
+                    on.click(() => { isShown.current = !isShown.current }),
+                    "Toggle",
+                )
+            ),
+            maybe(
+                () => isShown.current,
+                child,
+            )
+        ]
+    }
+
+    return [
+        el.h1("Test Component"),
+        el.h2("Counter With-out"),
+        counterWithoutTemplate,
+        counterWithoutTemplate,
+        el.h2("Counter With"),
+        counterWithTemplate,
+        counterWithTemplate,
+        el.h2("Maybe With-out"),
+        Maybe(maybeWithoutTemplate),
+        el.h2("Maybe With"),
+        Maybe(maybeWithTemplate),
+    ]
+}
+
+function TestComponentEffects () {
+    const Updater = (global, deleteInst) => component(() => {
+        const intervalMs = ref(2000)
+
+        useEffect((cleanUp) => {
+            const intervalId = setInterval(() => {
+                global.current++
+                elRef.current.animate([
+                    { backgroundColor: 'limegreen' },
+                    { backgroundColor: 'transparent' },
+                ], {
+                    duration: 500,
+                    fill: 'forwards',
+                })
+            }, intervalMs.current)
+            cleanUp(() => clearInterval(intervalId))
+        })
+
+        const elRef = ref(null)
+
+        return el.div(
+            el.button(
+                on.click(() => intervalMs.current -= 500),
+                att.disabled(() => intervalMs.current <= 1000),
+                "-"
+            ),
+            el.span(
+                createEffect((node) => elRef.current = node),
+                text(() => `Every ${intervalMs.current}ms`)
+            ),
+            el.button(
+                on.click(() => intervalMs.current += 500),
+                "+",
+            ),
+            el.button(
+                on.click(() => deleteInst()),
+                "Delete",
+            )
+        )
+    })
+
+    const instances = ref([])
+    const globalCounter = ref(0)
+
+    const deleteInst = inst => {
+        const index = instances.current.indexOf(inst)
+        if (index >= 0) {
+            instances.current.splice(index, 1)
+            instances.refresh()
+        }
+    }
+
+    return [
+        el.h1("Test Component Effects"),
+        el.div("Global: ", text(() => globalCounter.current)),
+        map(
+            () => instances.current,
+            (inst) => Updater(globalCounter, () => deleteInst(inst)),
+        ),
+        el.div(
+            el.button(
+                on.click(() => {
+                    instances.current.push({})
+                    instances.refresh()
+                }),
+                "Add"
+            )
+        )
     ]
 }
 
