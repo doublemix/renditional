@@ -2,6 +2,15 @@ const camelToKebab = (source) => {
     return source.replace(/[A-Z]/g, x => "-" + x.toLowerCase())
 }
 
+const maybeCall = (valueOrFn, ...args) => {
+    if (typeof valueOrFn === 'function') {
+        return valueOrFn(...args)
+    }
+    return valueOrFn
+}
+
+const noop = () => {}
+
 class DependencyTracker {
     constructor () {
         this.dependentStack = []
@@ -49,10 +58,11 @@ export class Dependency {
 }
 
 export class Dependent {
-    constructor (callback) {
+    constructor () {
         this.dependencies = []
-        this.callback = callback
+        this.callback = null
         this.isCancelled = false
+        this.timeoutId = null
     }
 
     registerCallback (callback) {
@@ -83,7 +93,20 @@ export class Dependent {
 
     onDependencyUpdated () {
         if (this.isCancelled) return;
-        (0, this.callback)()
+        this.queueUpdate()
+    }
+
+    queueUpdate () {
+        if (this.timeoutId === null) {
+            this.timeoutId = setTimeout(() => {
+                this.timeoutId = null
+
+                if (!this.callback) {
+                    console.warn('Unhandled dependent update')
+                }
+                (0, this.callback)()
+            }, 0)
+        }
     }
 
     cancel () {
@@ -105,8 +128,10 @@ export const ref = initialValue => {
             return value
         },
         set current (newValue) {
-            value = newValue
-            dep.updated();
+            if (newValue !== value) {
+                value = newValue
+                dep.updated();
+            }
         },
         get value () {
             return value
@@ -117,6 +142,41 @@ export const ref = initialValue => {
         refresh () {
             dep.updated();
         }
+    }
+}
+
+export const computed = (getter, setter = null) => {
+    const dependency = new Dependency()
+    const dependent = new Dependent()
+
+    let isDirty = true
+    let value
+
+    dependent.registerCallback(() => {
+        isDirty = true
+        dependency.updated()
+    })
+
+    return {
+        get current () {
+            dependency.referenced()
+
+            if (isDirty) {
+                value = dependent.with(() => {
+                    return getter()
+                })
+                isDirty = false
+            }
+
+            return value
+        },
+
+        set current (newValue) {
+            if (typeof setter !== 'function') {
+                throw new TypeError('Cannot set `current` of read-only copmuted property')
+            }
+            setter(newValue)
+        },
     }
 }
 
@@ -150,12 +210,10 @@ export const makeDestroyer = () => {
     function destroyer () {
         if (destroyed) throw new Error("attempt to destroy when already destroyed")
         try {
-
-            destroyCallbacks.slice().forEach(cb => {
-                cb()
+            destroyCallbacks.slice().forEach(callback => {
+                callback()
             })
         } finally {
-
             destroyed = true
         }
     }
@@ -165,22 +223,23 @@ export const makeDestroyer = () => {
     return destroyer
 }
 
-export const maybe = (calculateShown, construct) => {
-    return new StandardEffect((root, destroy) => {
+export const maybe = (shown, construct) => {
+    return new StandardEffect((node, destroy) => {
         const dependent = new Dependent()
         destroy(() => dependent.cancel())
 
-        const comment = document.createComment("")
-        root.appendChild(comment)
-        destroy(() => root.removeChild(comment))
+        const comment = document.createComment("maybe")
+        node.appendChild(comment)
+        destroy(() => node.removeChild(comment))
 
         const section = new Section(comment)
 
         let currentShown = dependent.with(() => {
-            return maybeCall(calculateShown)
+            return maybeCall(shown)
         })
-
+        
         let currentDestroyer = null
+        destroy(() => currentDestroyer?.())
 
         if (currentShown) {
             currentDestroyer = makeDestroyer()
@@ -189,7 +248,7 @@ export const maybe = (calculateShown, construct) => {
 
         dependent.registerCallback(() => {
             const nextShown = dependent.with(() => {
-                return maybeCall(calculateShown)
+                return maybeCall(shown)
             })
 
             if (nextShown && !currentShown) {
@@ -204,28 +263,30 @@ export const maybe = (calculateShown, construct) => {
             
             currentShown = nextShown
         })
-
-        destroy(() => currentDestroyer?.())
     })
 }
 
-export const map = (calculateIterable, mapper) => {
-    return new StandardEffect((root, destroy) => {
-        const dependent = new Dependent(run)
+export const map = (iterable, mapper) => {
+    return new StandardEffect((node, destroy) => {
+        const dependent = new Dependent()
         destroy(() => dependent.cancel())
 
         const startOfMap = document.createComment("map")
-        root.appendChild(startOfMap)
-        destroy(() => root.removeChild(startOfMap))
+        node.appendChild(startOfMap)
+        destroy(() => node.removeChild(startOfMap))
         
         let currentItems = []
         destroy(() => currentItems.forEach(item => item.destroyer()))
+
+        dependent.registerCallback(run)
+
+        run()
         
         function run () {
             let newItems = []
 
             Deps.with(dependent, () => {
-                for (const value of maybeCall(calculateIterable)) {
+                for (const value of maybeCall(iterable)) {
                     if (newItems.some(x => x.value === value)) continue; // no duplicates
 
                     const item = {
@@ -238,8 +299,7 @@ export const map = (calculateIterable, mapper) => {
                 }
             })
 
-            let currentIndex = 0
-            let newIndex = 0
+            let index = 0
 
             function getStartNode (currentIndex) {
                 let actualIndex = currentIndex - 1
@@ -247,40 +307,38 @@ export const map = (calculateIterable, mapper) => {
                 return startNode
             }
 
-            while (newIndex < newItems.length || currentIndex < currentItems.length) {
-                // does the current item have a match, if not then destroy
-                if (currentIndex < currentItems.length) {
-                    const currentItem = currentItems[currentIndex]
+            while (index < newItems.length || index < currentItems.length) {
+                // does the current item have a match? if not then destroy
+                if (index < currentItems.length) {
+                    const currentItem = currentItems[index]
                     const matchingIndex = newItems.findIndex(x => x.value === currentItem.value)
                     if (matchingIndex === -1) {
                         currentItem.destroyer()
-                        currentItems.splice(currentIndex, 1)
+                        currentItems.splice(index, 1)
                         continue;
                     }
                 }
 
-                if (newIndex < newItems.length) {
-                    const newItem = newItems[newIndex]
+                if (index < newItems.length) {
+                    const newItem = newItems[index]
                     const matchingIndex = currentItems.findIndex(x => x.value === newItem.value)
                     if (matchingIndex === -1) {
                         // brand new item
                         newItem.destroyer = makeDestroyer()
                         newItem.commentNode = document.createComment("map item")
-                        // newItem.destroyer.destroy()
                         newItem.section = new Section(newItem.commentNode)
                         
-                        const insertBeforeNode = getStartNode(currentIndex).nextSibling
-                        root.insertBefore(newItem.commentNode, insertBeforeNode)
-                        newItem.destroyer.destroy(() => root.removeChild(newItem.commentNode))
+                        const insertBeforeNode = getStartNode(index).nextSibling
+                        node.insertBefore(newItem.commentNode, insertBeforeNode)
+                        newItem.destroyer.destroy(() => node.removeChild(newItem.commentNode))
 
                         render(newItem.section, mapper(newItem.value), newItem.destroyer.destroy)
 
-                        currentItems.splice(currentIndex, 0, newItem)
+                        currentItems.splice(index, 0, newItem)
 
-                        currentIndex++
-                        newIndex++
+                        index++
                     } else {
-                        if (matchingIndex !== currentIndex) {
+                        if (matchingIndex !== index) {
                             // move
                             const matchingItem = currentItems[matchingIndex]
                             const elementsToMove = []
@@ -293,20 +351,19 @@ export const map = (calculateIterable, mapper) => {
                                 elementsToMove.push(currentNode)
                             }
 
-                            const insertBeforeNode = getStartNode(currentIndex).nextSibling
+                            const insertBeforeNode = getStartNode(index).nextSibling
                             
                             for (const element of elementsToMove) {
-                                root.insertBefore(element, insertBeforeNode)
+                                node.insertBefore(element, insertBeforeNode)
                             }
 
                             currentItems.splice(matchingIndex, 1)
-                            currentItems.splice(currentIndex, 0, matchingItem)
+                            currentItems.splice(index, 0, matchingItem)
 
-                            currentIndex++
-                            newIndex++
+                            index++
                         } else {
-                            currentIndex++
-                            newIndex++
+                            // item already in correct position in document
+                            index++
                         }
                     }
                 }
@@ -339,25 +396,23 @@ export const map = (calculateIterable, mapper) => {
             // TODO only run on test
             assertUpdateWasSuccessful()
         }
-        
-        run()
     })
 }
 
 export class Effect {
-    apply (root, destroy) {
+    apply (node, destroy) {
         throw new Error("Abstract method Effect.apply called directly")
     }
 }
 
 export class StandardEffect extends Effect {
-    constructor (applyCb) {
+    constructor (applyCallback) {
         super()
-        this.applyCb = applyCb
+        this.applyCallback = applyCallback
     }
 
-    apply (root, destroy) {
-        (0, this.applyCb)(root, destroy)
+    apply (node, destroy) {
+        (0, this.applyCallback)(node, destroy)
     }
 }
 
@@ -367,7 +422,7 @@ export const createEffect = (effectFn) => {
 
 function createPropertyBasedProxy (valueCreator) {
     return new Proxy({}, {
-        get(target, property, _) {
+        get(target, property) {
             if (!target[property]) {
                 target[property] = { value: valueCreator(property) }
             }
@@ -380,12 +435,11 @@ export const el = createPropertyBasedProxy(camelCaseTagName => {
     const tagName = camelToKebab(camelCaseTagName)
 
     function self(...children) {
-        return new StandardEffect((root, destroy) => {
+        return new StandardEffect((node, destroy) => {
             const element = document.createElement(tagName)
 
-            root.appendChild(element)
-
-            destroy(() => root.removeChild(element))
+            node.appendChild(element)
+            destroy(() => node.removeChild(element))
 
             render(element, children, destroy)
         })
@@ -398,31 +452,37 @@ export const att = createPropertyBasedProxy(camelCaseAttributeName => {
     const attributeName = camelToKebab(camelCaseAttributeName)
 
     function self(calculateValue) {
-        return new StandardEffect((root, destroy) => {
+        return new StandardEffect((node, destroy) => {
             const dependent = new Dependent()
             destroy(() => dependent.cancel())
             
+            dependent.registerCallback(run)
+
+            run()
+
+            destroy(() => {
+                if (node.hasAttribute(attributeName)) {
+                    node.removeAttribute(attributeName)
+                }
+            })
+
             function run () {
-                let currentComputedValue
-                Deps.with(dependent, () => {
-                    currentComputedValue = maybeCall(calculateValue)
+                const currentComputedValue = dependent.with(() => {
+                    return maybeCall(calculateValue)
                 })
 
                 if (typeof currentComputedValue === 'boolean') {
                     if (currentComputedValue) {
-                        root.setAttribute(attributeName, '')
+                        node.setAttribute(attributeName, '')
                     } else {
-                        if (root.hasAttribute(attributeName))
-                            root.removeAttribute(attributeName)
+                        if (node.hasAttribute(attributeName))
+                            node.removeAttribute(attributeName)
                     }
                 } else {
-                    root.setAttribute(attributeName, currentComputedValue?.toString())
+                    node.setAttribute(attributeName, currentComputedValue?.toString())
                 }
             }
 
-            dependent.registerCallback(run)
-
-            run()
         })
     }
 
@@ -433,10 +493,9 @@ export const on = createPropertyBasedProxy(camelCaseEventName => {
     const eventName = camelToKebab(camelCaseEventName)
     
     function self(listener) {
-        return new StandardEffect((root, destroy) => {
-            root.addEventListener(eventName, listener)
-
-            destroy(() => root.removeEventListener(eventName, listener))
+        return new StandardEffect((node, destroy) => {
+            node.addEventListener(eventName, listener)
+            destroy(() => node.removeEventListener(eventName, listener))
         })
     }
 
@@ -444,7 +503,7 @@ export const on = createPropertyBasedProxy(camelCaseEventName => {
 })
 
 export const text = (valueCreator) => {
-    return new StandardEffect((root, destroy) => {
+    return new StandardEffect((node, destroy) => {
         const dependent = new Dependent()
         destroy(() => dependent.cancel())
 
@@ -454,8 +513,8 @@ export const text = (valueCreator) => {
 
         const textNode = document.createTextNode(initialValue)
 
-        root.appendChild(textNode)
-        destroy(() => root.removeChild(textNode))
+        node.appendChild(textNode)
+        destroy(() => node.removeChild(textNode))
 
         dependent.registerCallback(() => {
             const newValue = dependent.with(() => {
@@ -467,29 +526,19 @@ export const text = (valueCreator) => {
     })
 }
 
-const maybeCall = (valueOrFn, ...args) => {
-    if (typeof valueOrFn === 'function') {
-        return valueOrFn(...args)
-    }
-    return valueOrFn
-}
-
-const noop = () => {}
-
-export const render = (root, template, destroy = noop) => {
+export const render = (node, template, destroy = noop) => {
     if (template instanceof Array) {
         for (const item of template)
-            render(root, item, destroy)
+            render(node, item, destroy)
     } else if (template instanceof Effect) {
-        template.apply(root, destroy)
+        template.apply(node, destroy)
     } else if (typeof template === 'function') {
         throw new Error("Function template not supported, currently")
     } else if (template === null || typeof template === 'string' || typeof template === 'number' || typeof template === 'boolean') {
         const textNode = document.createTextNode(template)
-        root.appendChild(textNode)
-        destroy(() => root.removeChild(textNode))
+        node.appendChild(textNode)
+        destroy(() => node.removeChild(textNode))
     } else {
-        root.appendChild(template)
-        destroy(() => root.removeChild(template))
+        throw new TypeError("Unexpected template value of type " + typeof template)
     }
 }
