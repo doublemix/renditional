@@ -586,3 +586,32 @@ export const render = (node, template, destroy = noop) => {
         throw new TypeError("Unexpected template value of type " + typeof template)
     }
 }
+
+// need to serve the JSX runtime
+const createElement = (tagName, props, ...children) => {
+    if (typeof tagName === 'string') {
+        const tag = el[tagName]
+        const effects = []
+        for (const prop of Object.keys(props ?? {})) {
+            if (prop.startsWith("on-")) {
+                const eventName = prop.substring(3)
+                effects.push(on[eventName](props[prop]))
+            } else {
+                effects.push(att[prop](props[prop]))
+            }
+        }
+        effects.push(...children)
+        return tag(...effects)
+    } else {
+        return tagName(props, ...children)
+    }
+}
+
+const Fragment = (_, ...children) => {
+    return children
+}
+
+export default {
+    createElement,
+    Fragment,
+}

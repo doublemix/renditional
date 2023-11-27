@@ -1,0 +1,134 @@
+<html>
+
+<head>
+    <title>Renditional JSX</title>
+    <link href="./index.css" rel="stylesheet" />
+</head>
+
+<body>
+    <div id="app"></div>
+    <script type="importmap">
+        {
+            "imports": {
+                "renditional": "/renditional/core.js"
+            }
+        }
+    </script>
+    <script type="text/jsx" data-type="module">
+        /** @jsx Renditional.createElement */
+        /** @jsxFrag Renditional.Fragment */
+        import Renditional, { render, component, StandardEffect, Dependent, ref, map, text, maybe } from 'renditional'
+
+        const nextId = (() => {
+            let _nextId = 0
+            return () => _nextId++
+        })
+
+        const managedInputValue = (valueCreator, property = 'value') => {
+            return new StandardEffect((node, destroy) => {
+                const dependent = new Dependent()
+                destroy(() => dependent.cancel())
+        
+                dependent.registerCallback(run)
+                
+                run()
+        
+                function run () {
+                    const value = dependent.with(() => {
+                        return valueCreator()
+                    })
+        
+                    node[property] = value
+                }
+            })
+        }
+
+        const TodoApp = () => component(() => {
+            const inputValue = ref('')
+            const todos = ref([])
+
+            const submitTodo = (event) => {
+                event.preventDefault()
+
+                const todo = {
+                    id: nextId(),
+                    description: ref(inputValue.current),
+                    isComplete: ref(false),
+                }
+
+                todos.current.push(todo)
+                todos.refresh()
+                inputValue.current = ''
+
+                return false
+            }
+
+            const markAllComplete = () => {
+                todos.current.forEach(todo => {
+                    todo.isComplete.current = true
+                })
+            }
+
+            return (
+                <div>
+                    <h1>Test JSX (Todos)</h1>
+                    <form on-submit={submitTodo}>
+                        <input on-input={event => { inputValue.current = event.target.value }}>
+                            {managedInputValue(() => inputValue.current)}
+                        </input>
+                        <button type="submit" disabled={() => inputValue.current.trim() === ''}>
+                            New Todo
+                        </button>
+                    </form>
+                    <ul>
+                        {map(
+                            () => todos.current,
+                            todo => {
+                                const deleteTodo = () => {
+                                    const index = todos.current.indexOf(todo)
+                                    todos.current.splice(index, 1)
+                                    todos.refresh()
+                                }
+                                return <Todo todo={todo} onDelete={deleteTodo} />
+                            }
+                        )}
+                    </ul>
+                    {maybe(
+                        () => todos.current.length > 0,
+                        <div>
+                            <button
+                                on-click={() => markAllComplete()}
+                                disabled={() => todos.current.every(todo => todo.isComplete.current)}
+                            >
+                                Mark All Complete
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )
+        })
+
+        const Todo = ({ todo, onDelete }) => component(() => {
+            return (
+                <>
+                    <li on-click={() => { todo.isComplete.current = !todo.isComplete.current }}>
+                        <input type="checkbox" on-change={() => todo.isComplete.current = event.target.checked }>
+                            {managedInputValue(() => todo.isComplete.current, 'checked')}
+                        </input>
+                        {} {}
+                        <span style={() => todo.isComplete.current ? 'text-decoration: line-through;' : ''}>
+                            {text(() => todo.description.current)}
+                        </span>
+                        {} {}
+                        <button on-click={() => onDelete()}>
+                            Delete
+                        </button>
+                    </li>
+                </>
+            )
+        })
+
+        render(document.getElementById("app"), <TodoApp />)
+    </script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</body>
