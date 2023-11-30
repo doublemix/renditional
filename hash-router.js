@@ -1,9 +1,9 @@
 import { makeDestroyer, render, StandardEffect } from 'renditional'
 
 export const router = (routeMap, template404 = () => []) => {
-    return new StandardEffect((node, destroy) => {
+    return new StandardEffect((node, onDestroy) => {
         let currentDestroyer
-        destroy(() => currentDestroyer?.())
+        onDestroy(() => currentDestroyer?.destroy())
 
         function syncHash() {
             let hashLocation = document.location.hash.split('#')[1]
@@ -20,16 +20,16 @@ export const router = (routeMap, template404 = () => []) => {
                 next = (0, routeMap[hashLocation])()
             }
 
-            currentDestroyer?.()
+            currentDestroyer?.destroy()
 
             currentDestroyer = makeDestroyer()
 
-            render(node, next, currentDestroyer.destroy)
+            render(node, next, currentDestroyer.onDestroy)
 
         }
         syncHash()
 
         window.addEventListener("hashchange", syncHash)
-        destroy(() => window.removeEventListener("hashchange", syncHash))
+        onDestroy(() => window.removeEventListener("hashchange", syncHash))
     })
 }
