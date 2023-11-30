@@ -586,7 +586,7 @@ export const render = (node, template, onDestroy = noop) => {
 }
 
 // need to serve the JSX runtime
-const createElement = (tagName, props, ...children) => {
+export const createElement = (tagName, props, ...children) => {
     if (typeof tagName === 'string') {
         const tag = el[tagName]
         const effects = []
@@ -605,11 +605,6 @@ const createElement = (tagName, props, ...children) => {
     }
 }
 
-const Fragment = (_, ...children) => {
+export const Fragment = (_, ...children) => {
     return children
-}
-
-export default {
-    createElement,
-    Fragment,
 }
