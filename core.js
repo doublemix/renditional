@@ -199,18 +199,18 @@ class Section {
 }
 
 export const makeDestroyer = () => {
-    const destroyCallbacks = []
+    const onDestroyCallbacks = []
     let destroyed = false
 
-    function destroy (callback) {
-        if (destroyed) throw new Error("attempt to register destroy callback, when already destroyed")
-        destroyCallbacks.unshift(callback)
+    function onDestroy (callback) {
+        if (destroyed) throw new Error("attempt to register onDestroy callback, when already destroyed")
+        onDestroyCallbacks.unshift(callback)
     }
 
-    function destroyer () {
+    function destroy () {
         if (destroyed) throw new Error("attempt to destroy when already destroyed")
         try {
-            destroyCallbacks.slice().forEach(callback => {
+            onDestroyCallbacks.slice().forEach(callback => {
                 callback()
             })
         } finally {
@@ -218,19 +218,17 @@ export const makeDestroyer = () => {
         }
     }
 
-    destroyer.destroy = destroy
-
-    return destroyer
+    return { destroy, onDestroy }
 }
 
 export const maybe = (shown, construct) => {
-    return new StandardEffect((node, destroy) => {
+    return new StandardEffect((node, onDestroy) => {
         const dependent = new Dependent()
-        destroy(() => dependent.cancel())
+        onDestroy(() => dependent.cancel())
 
         const comment = document.createComment("maybe")
         node.appendChild(comment)
-        destroy(() => node.removeChild(comment))
+        onDestroy(() => node.removeChild(comment))
 
         const section = new Section(comment)
 
@@ -239,11 +237,11 @@ export const maybe = (shown, construct) => {
         })
         
         let currentDestroyer = null
-        destroy(() => currentDestroyer?.())
+        onDestroy(() => currentDestroyer?.destroy())
 
         if (currentShown) {
             currentDestroyer = makeDestroyer()
-            render(section, maybeCall(construct), currentDestroyer.destroy)
+            render(section, maybeCall(construct), currentDestroyer.onDestroy)
         }
 
         dependent.registerCallback(() => {
@@ -253,11 +251,11 @@ export const maybe = (shown, construct) => {
 
             if (nextShown && !currentShown) {
                 currentDestroyer = makeDestroyer()
-                render(section, maybeCall(construct), currentDestroyer.destroy)
+                render(section, maybeCall(construct), currentDestroyer.onDestroy)
             }
 
             if (!nextShown && currentShown) {
-                currentDestroyer()
+                currentDestroyer.destroy()
                 currentDestroyer = null
             }
             
@@ -267,16 +265,16 @@ export const maybe = (shown, construct) => {
 }
 
 export const map = (iterable, mapper) => {
-    return new StandardEffect((node, destroy) => {
+    return new StandardEffect((node, onDestroy) => {
         const dependent = new Dependent()
-        destroy(() => dependent.cancel())
+        onDestroy(() => dependent.cancel())
 
         const startOfMap = document.createComment("map")
         node.appendChild(startOfMap)
-        destroy(() => node.removeChild(startOfMap))
+        onDestroy(() => node.removeChild(startOfMap))
         
         let currentItems = []
-        destroy(() => currentItems.forEach(item => item.destroyer()))
+        onDestroy(() => currentItems.forEach(item => item.destroyer.destroy()))
 
         dependent.registerCallback(run)
 
@@ -313,7 +311,7 @@ export const map = (iterable, mapper) => {
                     const currentItem = currentItems[index]
                     const matchingIndex = newItems.findIndex(x => x.value === currentItem.value)
                     if (matchingIndex === -1) {
-                        currentItem.destroyer()
+                        currentItem.destroyer.destroy()
                         currentItems.splice(index, 1)
                         continue;
                     }
@@ -330,9 +328,9 @@ export const map = (iterable, mapper) => {
                         
                         const insertBeforeNode = getStartNode(index).nextSibling
                         node.insertBefore(newItem.commentNode, insertBeforeNode)
-                        newItem.destroyer.destroy(() => node.removeChild(newItem.commentNode))
+                        newItem.destroyer.onDestroy(() => node.removeChild(newItem.commentNode))
 
-                        render(newItem.section, mapper(newItem.value), newItem.destroyer.destroy)
+                        render(newItem.section, mapper(newItem.value), newItem.destroyer.onDestroy)
 
                         currentItems.splice(index, 0, newItem)
 
@@ -400,7 +398,7 @@ export const map = (iterable, mapper) => {
 }
 
 export class Effect {
-    apply (node, destroy) {
+    apply (node, onDestroy) {
         throw new Error("Abstract method Effect.apply called directly")
     }
 }
@@ -411,8 +409,8 @@ export class StandardEffect extends Effect {
         this.applyCallback = applyCallback
     }
 
-    apply (node, destroy) {
-        (0, this.applyCallback)(node, destroy)
+    apply (node, onDestroy) {
+        (0, this.applyCallback)(node, onDestroy)
     }
 }
 
@@ -435,13 +433,13 @@ export const el = createPropertyBasedProxy(camelCaseTagName => {
     const tagName = camelToKebab(camelCaseTagName)
 
     function self(...children) {
-        return new StandardEffect((node, destroy) => {
+        return new StandardEffect((node, onDestroy) => {
             const element = document.createElement(tagName)
 
             node.appendChild(element)
-            destroy(() => node.removeChild(element))
+            onDestroy(() => node.removeChild(element))
 
-            render(element, children, destroy)
+            render(element, children, onDestroy)
         })
     }
 
@@ -452,15 +450,15 @@ export const att = createPropertyBasedProxy(camelCaseAttributeName => {
     const attributeName = camelToKebab(camelCaseAttributeName)
 
     function self(calculateValue) {
-        return new StandardEffect((node, destroy) => {
+        return new StandardEffect((node, onDestroy) => {
             const dependent = new Dependent()
-            destroy(() => dependent.cancel())
+            onDestroy(() => dependent.cancel())
             
             dependent.registerCallback(run)
 
             run()
 
-            destroy(() => {
+            onDestroy(() => {
                 if (node.hasAttribute(attributeName)) {
                     node.removeAttribute(attributeName)
                 }
@@ -493,9 +491,9 @@ export const on = createPropertyBasedProxy(camelCaseEventName => {
     const eventName = camelToKebab(camelCaseEventName)
     
     function self(listener) {
-        return new StandardEffect((node, destroy) => {
+        return new StandardEffect((node, onDestroy) => {
             node.addEventListener(eventName, listener)
-            destroy(() => node.removeEventListener(eventName, listener))
+            onDestroy(() => node.removeEventListener(eventName, listener))
         })
     }
 
@@ -503,9 +501,9 @@ export const on = createPropertyBasedProxy(camelCaseEventName => {
 })
 
 export const text = (valueCreator) => {
-    return new StandardEffect((node, destroy) => {
+    return new StandardEffect((node, onDestroy) => {
         const dependent = new Dependent()
-        destroy(() => dependent.cancel())
+        onDestroy(() => dependent.cancel())
 
         const initialValue = dependent.with(() => {
             return maybeCall(valueCreator)
@@ -514,7 +512,7 @@ export const text = (valueCreator) => {
         const textNode = document.createTextNode(initialValue)
 
         node.appendChild(textNode)
-        destroy(() => node.removeChild(textNode))
+        onDestroy(() => node.removeChild(textNode))
 
         dependent.registerCallback(() => {
             const newValue = dependent.with(() => {
@@ -531,17 +529,17 @@ const ComponentContext = {
 }
 
 export const component = (setUp) => {
-    return new StandardEffect((node, destroy) => {
+    return new StandardEffect((node, onDestroy) => {
 
         const previousContext = ComponentContext.current
-        ComponentContext.current = { destroy }
+        ComponentContext.current = { onDestroy }
         let template
         try {
             template = setUp()
         } finally {
             ComponentContext.current = previousContext
         }
-        render(node, template, destroy)
+        render(node, template, onDestroy)
     })
 }
 
@@ -553,35 +551,35 @@ export const useEffect = (effect) => {
     const dependent = new Dependent()
 
     let currentDestroyer
-    ComponentContext.current.destroy(() => currentDestroyer?.())
+    ComponentContext.current.onDestroy(() => currentDestroyer?.destroy())
 
     dependent.registerCallback(run)
 
     run()
 
     function run () {
-        currentDestroyer?.()
+        currentDestroyer?.destroy()
 
         currentDestroyer = makeDestroyer()
 
         dependent.with(() => {
-            effect(currentDestroyer.destroy)
+            effect(currentDestroyer.onDestroy)
         })
     }
 }
 
-export const render = (node, template, destroy = noop) => {
+export const render = (node, template, onDestroy = noop) => {
     if (template instanceof Array) {
         for (const item of template)
-            render(node, item, destroy)
+            render(node, item, onDestroy)
     } else if (template instanceof Effect) {
-        template.apply(node, destroy)
+        template.apply(node, onDestroy)
     } else if (typeof template === 'function') {
         throw new Error("Function template not supported, currently")
     } else if (template === null || typeof template === 'string' || typeof template === 'number' || typeof template === 'boolean') {
         const textNode = document.createTextNode(template)
         node.appendChild(textNode)
-        destroy(() => node.removeChild(textNode))
+        onDestroy(() => node.removeChild(textNode))
     } else {
         throw new TypeError("Unexpected template value of type " + typeof template)
     }
