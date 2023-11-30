@@ -452,11 +452,14 @@ function TestComponent () {
 }
 
 function TestComponentEffects () {
-    const Updater = (global, deleteInst) => component(() => {
+    const Updater = (global, deleteInst, intervalMethod) => component(() => {
         const intervalMs = ref(2000)
 
         useEffect((cleanUp) => {
-            const intervalId = setInterval(() => {
+            let lastTimeMs = Date.now()
+            let cumulativeOffByMs = 0
+            
+            function coreUpdate () {
                 global.current++
                 elRef.current.animate([
                     { backgroundColor: 'limegreen' },
@@ -465,8 +468,41 @@ function TestComponentEffects () {
                     duration: 500,
                     fill: 'forwards',
                 })
-            }, intervalMs.current)
-            cleanUp(() => clearInterval(intervalId))
+
+                const thisTimeMs = Date.now()
+                const diff = thisTimeMs - lastTimeMs
+                const offBy = diff - intervalMs.value
+                cumulativeOffByMs += offBy
+
+                const message = `Update { expected: ${intervalMs.value}ms, actual: ${diff}ms, offBy: ${offBy} (total ${cumulativeOffByMs}ms) }`;
+
+                if (cumulativeOffByMs < 0 || cumulativeOffByMs > 2000) {
+                    console.error(message)
+                } else if (offBy < 0) {
+                    console.warn(message)
+                } else {
+                    console.log(message)
+                }
+
+                lastTimeMs = thisTimeMs
+            }
+
+            if (intervalMethod.current === 'setTimeout') {
+                let timeoutId
+                function helper () {
+                    timeoutId = setTimeout(() => {
+                        coreUpdate();
+                        helper()
+                    }, intervalMs.current)
+                }
+                helper()
+                cleanUp(() => clearTimeout(timeoutId))
+            } else if (intervalMethod.current === 'setInterval') {
+                let intervalId = setInterval(() => {
+                    coreUpdate()
+                }, intervalMs.current)
+                cleanUp(() => clearInterval(intervalId))
+            }
         })
 
         const elRef = ref(null)
@@ -494,6 +530,15 @@ function TestComponentEffects () {
 
     const instances = ref([])
     const globalCounter = ref(0)
+    const intervalMethod = ref("setInterval")
+
+    const makeOption = (value) => ({ value, label: value })
+
+    const intervalOptions = [
+        makeOption('setTimeout'),
+        makeOption('setInterval'),
+        makeOption('none'),
+    ]
 
     const deleteInst = inst => {
         const index = instances.current.indexOf(inst)
@@ -506,9 +551,15 @@ function TestComponentEffects () {
     return [
         el.h1("Test Component Effects"),
         el.div("Global: ", text(() => globalCounter.current)),
-        map(
-            () => instances.current,
-            (inst) => Updater(globalCounter, () => deleteInst(inst)),
+        el.select(
+            on.input(event => intervalMethod.current = event.target.value),
+            intervalOptions.map(({ value, label }) =>
+                el.option(
+                    att.value(value),
+                    label,
+                )
+            ),
+            createEffect(node => node.value = intervalMethod.value ),
         ),
         el.div(
             el.button(
@@ -518,7 +569,11 @@ function TestComponentEffects () {
                 }),
                 "Add"
             )
-        )
+        ),
+        map(
+            () => instances.current,
+            (inst) => Updater(globalCounter, () => deleteInst(inst), intervalMethod),
+        ),
     ]
 }
 
