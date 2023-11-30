@@ -39,7 +39,7 @@ export class Dependency {
 
     updated () {
         this.dependents.slice().forEach((dependent) => {
-            dependent.onDependencyUpdated();
+            dependent.receiveDependencyUpdated();
         })
     }
 
@@ -65,7 +65,7 @@ export class Dependent {
         this.timeoutId = null
     }
 
-    registerCallback (callback) {
+    onDependencyUpdated (callback) {
         this.callback = callback
     }
 
@@ -91,12 +91,12 @@ export class Dependent {
         return result
     }
 
-    onDependencyUpdated () {
+    receiveDependencyUpdated () {
         if (this.isCancelled) return;
-        this.queueUpdate()
+        this._queueUpdate()
     }
 
-    queueUpdate () {
+    _queueUpdate () {
         if (this.timeoutId === null) {
             this.timeoutId = setTimeout(() => {
                 this.timeoutId = null
@@ -152,7 +152,7 @@ export const computed = (getter, setter = null) => {
     let isDirty = true
     let value
 
-    dependent.registerCallback(() => {
+    dependent.onDependencyUpdated(() => {
         isDirty = true
         dependency.updated()
     })
@@ -244,7 +244,7 @@ export const maybe = (shown, construct) => {
             render(section, maybeCall(construct), currentDestroyer.onDestroy)
         }
 
-        dependent.registerCallback(() => {
+        dependent.onDependencyUpdated(() => {
             const nextShown = dependent.with(() => {
                 return maybeCall(shown)
             })
@@ -276,7 +276,7 @@ export const map = (iterable, mapper) => {
         let currentItems = []
         onDestroy(() => currentItems.forEach(item => item.destroyer.destroy()))
 
-        dependent.registerCallback(run)
+        dependent.onDependencyUpdated(run)
 
         run()
         
@@ -454,7 +454,7 @@ export const att = createPropertyBasedProxy(camelCaseAttributeName => {
             const dependent = new Dependent()
             onDestroy(() => dependent.cancel())
             
-            dependent.registerCallback(run)
+            dependent.onDependencyUpdated(run)
 
             run()
 
@@ -514,7 +514,7 @@ export const text = (valueCreator) => {
         node.appendChild(textNode)
         onDestroy(() => node.removeChild(textNode))
 
-        dependent.registerCallback(() => {
+        dependent.onDependencyUpdated(() => {
             const newValue = dependent.with(() => {
                 return maybeCall(valueCreator)
             })
@@ -553,7 +553,7 @@ export const useEffect = (effect) => {
     let currentDestroyer
     ComponentContext.current.onDestroy(() => currentDestroyer?.destroy())
 
-    dependent.registerCallback(run)
+    dependent.onDependencyUpdated(run)
 
     run()
 

@@ -27,7 +27,7 @@ const managedInputValue = (valueCreator) => {
         const dependent = new Dependent()
         destroy(() => dependent.cancel())
 
-        dependent.registerCallback(run)
+        dependent.onDependencyUpdated(run)
         
         run()
 
