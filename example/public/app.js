@@ -14,6 +14,7 @@ import {
     component,
     useEffect,
     reactive,
+    createContext,
 } from "/renditional/core.js"
 
 function maybeCall (maybeFn, ...args) {
@@ -24,9 +25,9 @@ function maybeCall (maybeFn, ...args) {
 }
 
 const managedInputValue = (valueCreator) => {
-    return new StandardEffect((root, destroy) => {
+    return new StandardEffect((node, onDestroy) => {
         const dependent = new Dependent()
-        destroy(() => dependent.cancel())
+        onDestroy(() => dependent.cancel())
 
         dependent.onDependencyUpdated(run)
         
@@ -37,7 +38,7 @@ const managedInputValue = (valueCreator) => {
                 return maybeCall(valueCreator)
             })
 
-            root.value = value
+            node.value = value
         }
     })
 }
@@ -194,6 +195,7 @@ function App () {
         TestComponent(),
         TestComponentEffects(),
         TestReactiveApp(),
+        TestContext(),
     ]
 }
 
@@ -630,6 +632,63 @@ function TestReactiveApp () {
             }),
         ),
     ]
+}
+
+const contextA = createContext(ref('default text'))
+const contextB = createContext()
+
+function TestContext () {
+    return component(() => {
+        const aValue = contextA.inject()
+
+        const inputValue = ref('')
+
+        contextA.provide(inputValue)
+        contextB.provide(ref("b-value"))
+
+        return el.div(
+            att.class("box"),
+            el.div(
+                "A-Value (default): ",
+                text(() => aValue.current),
+            ),
+            el.div(
+                el.input(
+                    managedInputValue(() => inputValue.current),
+                    on.input(event => inputValue.current = event.target.value)
+                ),
+            ),
+            component(() => {
+                const aValue = contextA.inject()
+                const bValue = contextB.inject()
+                return el.div(
+                    att.class("box"),
+                    el.div("A-Value: ", text(() => aValue.current)),
+                    el.div("B-Value: ", text(() => bValue.current)),
+                    component(() => {
+                        const aValue = contextA.inject()
+
+                        const aTwice = computed(() => `${aValue.current} ${aValue.current}`)
+
+                        contextA.provide(aTwice)
+
+                        return el.div(
+                            att.class("box"),
+                            el.div("Still A-Value: ", text(() => aValue.current)),
+                            component(() => {
+                                const aValue = contextA.inject()
+
+                                return el.div(
+                                    att.class("box"),
+                                    el.div("A-Value Twice: ", text(() => aValue.current)),
+                                )
+                            })
+                        )
+                    })
+                )
+            })
+        )
+    })
 }
 
 function main () {

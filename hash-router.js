@@ -1,7 +1,7 @@
 import { makeDestroyer, render, StandardEffect } from 'renditional'
 
 export const router = (routeMap, template404 = () => []) => {
-    return new StandardEffect((node, onDestroy) => {
+    return new StandardEffect((node, onDestroy, componentCtx) => {
         let currentDestroyer
         onDestroy(() => currentDestroyer?.destroy())
 
@@ -24,7 +24,7 @@ export const router = (routeMap, template404 = () => []) => {
 
             currentDestroyer = makeDestroyer()
 
-            render(node, next, currentDestroyer.onDestroy)
+            render(node, next, currentDestroyer.onDestroy, componentCtx)
 
         }
         syncHash()

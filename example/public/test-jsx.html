@@ -25,9 +25,9 @@
         })
 
         const managedInputValue = (valueCreator, property = 'value') => {
-            return new StandardEffect((node, destroy) => {
+            return new StandardEffect((node, onDestroy) => {
                 const dependent = new Dependent()
-                destroy(() => dependent.cancel())
+                onDestroy(() => dependent.cancel())
         
                 dependent.onDependencyUpdated(run)
                 

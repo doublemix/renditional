@@ -222,7 +222,7 @@ export const makeDestroyer = () => {
 }
 
 export const reactive = (createTemplate) => {
-    return new StandardEffect((node, onDestroy) => {
+    return new StandardEffect((node, onDestroy, componentCtx) => {
         const dependent = new Dependent()
         onDestroy(() => dependent.cancel())
 
@@ -250,14 +250,14 @@ export const reactive = (createTemplate) => {
                 return createTemplate()
             })
     
-            render(section, template, currentDestroyer.onDestroy)
+            render(section, template, currentDestroyer.onDestroy, componentCtx)
         }
 
     })
 }
 
 export const maybe = (shown, construct) => {
-    return new StandardEffect((node, onDestroy) => {
+    return new StandardEffect((node, onDestroy, componentCtx) => {
         const dependent = new Dependent()
         onDestroy(() => dependent.cancel())
 
@@ -276,7 +276,7 @@ export const maybe = (shown, construct) => {
 
         if (currentShown) {
             currentDestroyer = makeDestroyer()
-            render(section, maybeCall(construct), currentDestroyer.onDestroy)
+            render(section, maybeCall(construct), currentDestroyer.onDestroy, componentCtx)
         }
 
         dependent.onDependencyUpdated(() => {
@@ -286,7 +286,7 @@ export const maybe = (shown, construct) => {
 
             if (nextShown && !currentShown) {
                 currentDestroyer = makeDestroyer()
-                render(section, maybeCall(construct), currentDestroyer.onDestroy)
+                render(section, maybeCall(construct), currentDestroyer.onDestroy, componentCtx)
             }
 
             if (!nextShown && currentShown) {
@@ -300,7 +300,7 @@ export const maybe = (shown, construct) => {
 }
 
 export const map = (iterable, mapper) => {
-    return new StandardEffect((node, onDestroy) => {
+    return new StandardEffect((node, onDestroy, componentCtx) => {
         const dependent = new Dependent()
         onDestroy(() => dependent.cancel())
 
@@ -365,7 +365,7 @@ export const map = (iterable, mapper) => {
                         node.insertBefore(newItem.commentNode, insertBeforeNode)
                         newItem.destroyer.onDestroy(() => node.removeChild(newItem.commentNode))
 
-                        render(newItem.section, mapper(newItem.value), newItem.destroyer.onDestroy)
+                        render(newItem.section, mapper(newItem.value), newItem.destroyer.onDestroy, componentCtx)
 
                         currentItems.splice(index, 0, newItem)
 
@@ -433,7 +433,7 @@ export const map = (iterable, mapper) => {
 }
 
 export class Effect {
-    apply (node, onDestroy) {
+    apply (node, onDestroy, componentCtx) {
         throw new Error("Abstract method Effect.apply called directly")
     }
 }
@@ -444,8 +444,8 @@ export class StandardEffect extends Effect {
         this.applyCallback = applyCallback
     }
 
-    apply (node, onDestroy) {
-        (0, this.applyCallback)(node, onDestroy)
+    apply (node, onDestroy, componentCtx) {
+        (0, this.applyCallback)(node, onDestroy, componentCtx)
     }
 }
 
@@ -468,13 +468,13 @@ export const el = createPropertyBasedProxy(camelCaseTagName => {
     const tagName = camelToKebab(camelCaseTagName)
 
     function self(...children) {
-        return new StandardEffect((node, onDestroy) => {
+        return new StandardEffect((node, onDestroy, componentCtx) => {
             const element = document.createElement(tagName)
 
             node.appendChild(element)
             onDestroy(() => node.removeChild(element))
 
-            render(element, children, onDestroy)
+            render(element, children, onDestroy, componentCtx)
         })
     }
 
@@ -563,30 +563,52 @@ const ComponentContext = {
     current: null,
 }
 
+const createComponentContext = (parentCtx) => {
+    const provisions = Object.create(null)
+
+    return {
+        provide (contextKey, value) {
+            provisions[contextKey] = value
+        },
+        getProvision (contextKey) {
+            if (contextKey in provisions) {
+                return provisions[contextKey]
+            }
+            return parentCtx?.getProvision(contextKey)
+        }
+    }
+}
+
 export const component = (setUp) => {
-    return new StandardEffect((node, onDestroy) => {
+    return new StandardEffect((node, onDestroy, componentCtx) => {
 
         const previousContext = ComponentContext.current
-        ComponentContext.current = { onDestroy }
+        const thisCtx = createComponentContext(componentCtx)
+        ComponentContext.current = { onDestroy, parentCtx: componentCtx, thisCtx }
         let template
         try {
             template = setUp()
         } finally {
             ComponentContext.current = previousContext
         }
-        render(node, template, onDestroy)
+        render(node, template, onDestroy, thisCtx)
     })
 }
 
-export const useEffect = (effect) => {
+function checkComponentContext(name) {
     if (ComponentContext.current === null) {
-        throw new TypeError("useEffect called outside of component setUp function")
+        throw new TypeError(name + " called outside of component setUp function")
     }
+    return ComponentContext.current
+}
+
+export const useEffect = (effect) => {
+    const componentContext = checkComponentContext(useEffect.name)
 
     const dependent = new Dependent()
 
     let currentDestroyer
-    ComponentContext.current.onDestroy(() => currentDestroyer?.destroy())
+    componentContext.onDestroy(() => currentDestroyer?.destroy())
 
     dependent.onDependencyUpdated(run)
 
@@ -603,14 +625,42 @@ export const useEffect = (effect) => {
     }
 }
 
-export const render = (node, template, onDestroy = noop) => {
+export const createContext = (...args) => {
+    const hasDefaultValue = args.length > 0
+    const defaultValue = args[0]
+
+    const contextKey = Symbol("context")
+
+    return {
+        provide (value) {
+            const componentContext = checkComponentContext('context.provide')
+
+            componentContext.thisCtx.provide(contextKey, { value })
+        },
+        inject () {
+            const componentContext = checkComponentContext()
+
+            const provision = componentContext.parentCtx?.getProvision(contextKey)
+            if (provision == null) {
+                if (!hasDefaultValue) {
+                    throw new Error("attempt to get context value, when none provided and no default")
+                }
+                return defaultValue
+            }
+
+            return provision.value
+        }
+    }
+}
+
+export const render = (node, template, onDestroy = noop, componentCtx = null) => {
     if (template instanceof Array) {
         for (const item of template)
-            render(node, item, onDestroy)
+            render(node, item, onDestroy, componentCtx)
     } else if (template instanceof Effect) {
-        template.apply(node, onDestroy)
+        template.apply(node, onDestroy, componentCtx)
     } else if (typeof template === 'function') {
-        render(node, reactive(template), onDestroy)
+        render(node, reactive(template), onDestroy, componentCtx)
     } else if (template === null || typeof template === 'string' || typeof template === 'number' || typeof template === 'boolean') {
         const textNode = document.createTextNode(template)
         node.appendChild(textNode)
