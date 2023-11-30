@@ -13,6 +13,7 @@ import {
     computed,
     component,
     useEffect,
+    reactive,
 } from "/renditional/core.js"
 
 function maybeCall (maybeFn, ...args) {
@@ -192,6 +193,7 @@ function App () {
         TestComputed(),
         TestComponent(),
         TestComponentEffects(),
+        TestReactiveApp(),
     ]
 }
 
@@ -573,6 +575,59 @@ function TestComponentEffects () {
         map(
             () => instances.current,
             (inst) => Updater(globalCounter, () => deleteInst(inst), intervalMethod),
+        ),
+    ]
+}
+
+function TestReactiveApp () {
+    const displayTemplate = ref("ul-list")
+
+    const Counter = () => {
+        const counter = ref(0)
+
+        const increment = () => counter.current++
+
+        return el.div(
+            el.button(
+                text(() => `Value: ${counter.current}`),
+                on.click(() => increment())
+            )
+        )
+    }
+
+    return [
+        el.div(
+            el.select(
+                el.option(att.value("red-text"), "Red Text"),
+                el.option(att.value("ul-list"), "Bulleted List"),
+                el.option(att.value("ol-list"), "Numbered List"),
+                el.option(att.value("counter"), "Counter"),
+                el.option(att.value(''), "???"),
+                createEffect(node => node.value = displayTemplate.value),
+                on.input(event => displayTemplate.current = event.target.value),
+            ),
+            reactive(() => displayTemplate.current),
+            el.div(() => {
+                if (displayTemplate.current === 'red-text') {
+                    return el.div(att.style("color: red;"), "Some red text")
+                }
+                if (displayTemplate.current === "ul-list") {
+                    return el.ul(
+                        el.li("Some thing"),
+                        el.li("Another thing"),
+                    )
+                }
+                if (displayTemplate.current === 'ol-list') {
+                    return el.ol(
+                        el.li("First thing"),
+                        el.li("Second thing"),
+                    )
+                }
+                if (displayTemplate.current === 'counter') {
+                    return Counter()
+                }
+                return "???"
+            }),
         ),
     ]
 }

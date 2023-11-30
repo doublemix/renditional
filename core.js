@@ -221,6 +221,41 @@ export const makeDestroyer = () => {
     return { destroy, onDestroy }
 }
 
+export const reactive = (createTemplate) => {
+    return new StandardEffect((node, onDestroy) => {
+        const dependent = new Dependent()
+        onDestroy(() => dependent.cancel())
+
+        const comment = document.createComment("reactive")
+        node.appendChild(comment)
+        onDestroy(() => node.removeChild(comment))
+
+        const section = new Section(comment)
+
+        let currentDestroyer = null
+        onDestroy(() => currentDestroyer.destroy())
+
+        run()
+
+        dependent.onDependencyUpdated(() => {
+            currentDestroyer.destroy()
+
+            run()
+        })
+        
+        function run () {
+            currentDestroyer = makeDestroyer()
+
+            const template = dependent.with(() => {
+                return createTemplate()
+            })
+    
+            render(section, template, currentDestroyer.onDestroy)
+        }
+
+    })
+}
+
 export const maybe = (shown, construct) => {
     return new StandardEffect((node, onDestroy) => {
         const dependent = new Dependent()
@@ -500,13 +535,13 @@ export const on = createPropertyBasedProxy(camelCaseEventName => {
     return self
 })
 
-export const text = (valueCreator) => {
+export const text = (value) => {
     return new StandardEffect((node, onDestroy) => {
         const dependent = new Dependent()
         onDestroy(() => dependent.cancel())
 
         const initialValue = dependent.with(() => {
-            return maybeCall(valueCreator)
+            return maybeCall(value)
         })
 
         const textNode = document.createTextNode(initialValue)
@@ -516,7 +551,7 @@ export const text = (valueCreator) => {
 
         dependent.onDependencyUpdated(() => {
             const newValue = dependent.with(() => {
-                return maybeCall(valueCreator)
+                return maybeCall(value)
             })
 
             textNode.textContent = newValue
@@ -575,7 +610,7 @@ export const render = (node, template, onDestroy = noop) => {
     } else if (template instanceof Effect) {
         template.apply(node, onDestroy)
     } else if (typeof template === 'function') {
-        throw new Error("Function template not supported, currently")
+        render(node, reactive(template), onDestroy)
     } else if (template === null || typeof template === 'string' || typeof template === 'number' || typeof template === 'boolean') {
         const textNode = document.createTextNode(template)
         node.appendChild(textNode)
