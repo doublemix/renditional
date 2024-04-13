@@ -625,6 +625,12 @@ export const useEffect = (effect) => {
     }
 }
 
+export const useOnDestroy = (handler) => {
+    const componentContext = checkComponentContext(useOnDestroy.name)
+
+    componentContext.onDestroy(handler)
+}
+
 export const createContext = (...args) => {
     const hasDefaultValue = args.length > 0
     const defaultValue = args[0]
@@ -693,3 +699,5 @@ export const createElement = (tagName, props, ...children) => {
 export const Fragment = (_, ...children) => {
     return children
 }
+
+export default 234;
